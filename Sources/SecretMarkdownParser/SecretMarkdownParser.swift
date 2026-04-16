@@ -1,3 +1,4 @@
+import Foundation
 import Markdown
 
 /// The main entry point for parsing Markdown text that may contain embedded LaTeX formulas.
@@ -34,18 +35,35 @@ public enum SecretMarkdownParser {
     /// - Parameter markdown: A Markdown string, optionally containing LaTeX delimiters.
     /// - Returns: A ``ParsedDocument`` containing the parsed block-level nodes.
     public static func parse(_ markdown: String) -> ParsedDocument {
-        // 1. Extract LaTeX
-        let extraction = LaTeXExtractor.extract(from: markdown)
+        let start = ContinuousClock.now
 
-        // 2. Parse with swift-markdown
-        let document = Document(parsing: extraction.processedString)
+        let document = Signposts.interval(Signposts.parser, "parse") { () -> ParsedDocument in
+            // 1. Extract LaTeX
+            let extraction = LaTeXExtractor.extract(from: markdown)
 
-        // 3. Convert to our AST
-        let blocks = MarkupConverter.convert(document: document)
+            // 2. Parse with swift-markdown
+            let parsedDocument = Document(parsing: extraction.processedString)
 
-        // 4. Replace placeholders with LaTeX nodes
-        let finalBlocks = LaTeXReplacer.replaceInBlocks(blocks, mapping: extraction.mapping)
+            // 3. Convert to our AST
+            let blocks = MarkupConverter.convert(document: parsedDocument)
 
-        return ParsedDocument(blocks: finalBlocks)
+            // 4. Replace placeholders with LaTeX nodes
+            let finalBlocks = LaTeXReplacer.replaceInBlocks(blocks, mapping: extraction.mapping)
+
+            let elapsed = ContinuousClock.now - start
+            // ContinuousClock guarantees forward duration, but defensive max(0, ...)
+            // keeps the calculation honest if a future refactor exposes the clock
+            // to subtraction with negative components.
+            let duration = TimeInterval(max(0, elapsed.components.seconds))
+                + TimeInterval(max(0, elapsed.components.attoseconds)) / 1e18
+            MarkdownObservability.recordParse(
+                duration: duration,
+                formulasExtracted: extraction.mapping.count
+            )
+
+            return ParsedDocument(blocks: finalBlocks)
+        }
+
+        return document
     }
 }

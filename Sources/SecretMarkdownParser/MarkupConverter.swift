@@ -7,6 +7,8 @@ enum MarkupConverter {
         return document.children.compactMap { convertBlock($0) }
     }
 
+    private static let diagnostics = MarkdownDiagnostics.shared
+
     // MARK: - Block conversion
 
     private static func convertBlock(_ markup: any Markup) -> BlockNode? {
@@ -42,9 +44,31 @@ enum MarkupConverter {
             return .thematicBreak
 
         case let htmlBlock as HTMLBlock:
+            diagnostics.emit(
+                severity: .info,
+                category: .parser,
+                code: .rawHTMLPreserved,
+                message: "Raw HTML block preserved as plain text — host should sanitize before display.",
+                context: MarkdownDiagnostic.Context(
+                    snippet: diagnostics.sanitizedSnippet(htmlBlock.rawHTML),
+                    location: nil,
+                    extra: ["kind": "block"]
+                )
+            )
             return .paragraph(inlines: [.text(htmlBlock.rawHTML)])
 
         default:
+            diagnostics.emit(
+                severity: .warning,
+                category: .parser,
+                code: .unknownBlockMarkup,
+                message: "Unknown block-level Markdown construct dropped during conversion.",
+                context: MarkdownDiagnostic.Context(
+                    snippet: diagnostics.sanitizedSnippet(String(describing: type(of: markup))),
+                    location: nil,
+                    extra: ["type": String(describing: type(of: markup))]
+                )
+            )
             // Fallback: try to extract inline content
             return nil
         }
@@ -120,9 +144,31 @@ enum MarkupConverter {
             return .softBreak
 
         case let html as InlineHTML:
+            diagnostics.emit(
+                severity: .info,
+                category: .parser,
+                code: .rawHTMLPreserved,
+                message: "Raw inline HTML preserved as text — host should sanitize before display.",
+                context: MarkdownDiagnostic.Context(
+                    snippet: diagnostics.sanitizedSnippet(html.rawHTML),
+                    location: nil,
+                    extra: ["kind": "inline"]
+                )
+            )
             return .text(html.rawHTML)
 
         default:
+            diagnostics.emit(
+                severity: .warning,
+                category: .parser,
+                code: .unknownInlineMarkup,
+                message: "Unknown inline Markdown construct dropped during conversion.",
+                context: MarkdownDiagnostic.Context(
+                    snippet: diagnostics.sanitizedSnippet(String(describing: type(of: markup))),
+                    location: nil,
+                    extra: ["type": String(describing: type(of: markup))]
+                )
+            )
             return nil
         }
     }

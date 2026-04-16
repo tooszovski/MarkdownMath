@@ -177,16 +177,21 @@ public final class MarkdownDiagnostics: @unchecked Sendable {
         message: @autoclosure () -> String,
         context: @autoclosure () -> MarkdownDiagnostic.Context = .empty
     ) {
+        // Cheap gate first: read only the severity threshold, no allocation.
+        // Filtered events still bump counters so a later `snapshot()` is honest.
+        let minSeverity = lock.withLock { $0.minimumSeverity }
+        guard severity >= minSeverity else {
+            MarkdownObservability.recordDiagnostic(severity: severity, code: code)
+            return
+        }
+
+        // Full snapshot for actual emission.
         let snapshot = lock.withLock { state -> EmissionSnapshot in
             EmissionSnapshot(
-                minimumSeverity: state.minimumSeverity,
+                minimumSeverity: minSeverity,
                 mirrorsToOSLog: state.mirrorsToOSLog,
                 observers: state.observers.values.compactMap { $0.observer }
             )
-        }
-
-        guard severity >= snapshot.minimumSeverity else {
-            return
         }
 
         if !(snapshot.observers.isEmpty && !snapshot.mirrorsToOSLog) {

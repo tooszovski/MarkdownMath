@@ -7,6 +7,8 @@ enum LaTeXReplacer {
         return blocks.map { replaceInBlock($0, mapping: mapping) }
     }
 
+    private static let diagnostics = MarkdownDiagnostics.shared
+
     // MARK: - Blocks
 
     private static func replaceInBlock(_ block: BlockNode, mapping: [String: LaTeXEntry]) -> BlockNode {
@@ -104,8 +106,27 @@ enum LaTeXReplacer {
                 }
             }
 
-            guard let found = earliest, let entry = mapping[found.key] else {
+            guard let found = earliest else {
                 // No more placeholders
+                if !remaining.isEmpty {
+                    nodes.append(.text(remaining))
+                }
+                break
+            }
+            guard let entry = mapping[found.key] else {
+                // Invariant violation: a placeholder UUID was found in the AST
+                // without a corresponding entry in the extraction mapping.
+                diagnostics.emit(
+                    severity: .error,
+                    category: .latex,
+                    code: .orphanLaTeXPlaceholder,
+                    message: "Orphan LaTeX placeholder in AST — extraction/replacement bug.",
+                    context: MarkdownDiagnostic.Context(
+                        snippet: diagnostics.sanitizedSnippet(found.key),
+                        location: nil,
+                        extra: ["placeholder": found.key]
+                    )
+                )
                 if !remaining.isEmpty {
                     nodes.append(.text(remaining))
                 }
@@ -147,11 +168,21 @@ enum LaTeXReplacer {
             }
         }
 
-        if meaningful.count == 1,
-           case .inlineLaTeX(let content) = meaningful[0],
-           let entry = findEntryByContent(content, mapping: mapping),
-           !entry.isInline {
-            return .displayLaTeX(content: content)
+        if meaningful.count == 1, case .inlineLaTeX(let content) = meaningful[0] {
+            if let entry = findEntryByContent(content, mapping: mapping), !entry.isInline {
+                return .displayLaTeX(content: content)
+            } else {
+                diagnostics.emit(
+                    severity: .debug,
+                    category: .latex,
+                    code: .displayPromotionSkipped,
+                    message: "Single-formula paragraph could not be promoted to display block; entry missing or marked inline.",
+                    context: MarkdownDiagnostic.Context(
+                        snippet: diagnostics.sanitizedSnippet(content),
+                        location: nil
+                    )
+                )
+            }
         }
 
         return .paragraph(inlines: inlines)

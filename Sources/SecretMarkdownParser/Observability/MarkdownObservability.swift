@@ -129,7 +129,7 @@ public enum MarkdownObservability {
     /// Reset all cumulative counters to zero. Does not affect observers or
     /// configuration (`signpostsEnabled`).
     public static func reset() {
-        let (metrics, observers) = mutateAndSnapshot { state in
+        let payload = mutateAndMaybeSnapshot { state in
             state.parseCount = 0
             state.totalParseDuration = 0
             state.latexFormulasExtracted = 0
@@ -143,6 +143,7 @@ public enum MarkdownObservability {
             state.diagnosticsByCode = [:]
             state.diagnosticsBySeverity = [:]
         }
+        guard let (metrics, observers) = payload else { return }
         notify(metrics: metrics, to: observers)
     }
 
@@ -150,46 +151,51 @@ public enum MarkdownObservability {
 
     @_spi(Internal)
     public static func recordParse(duration: TimeInterval, formulasExtracted: Int) {
-        let (metrics, observers) = mutateAndSnapshot { state in
+        let payload = mutateAndMaybeSnapshot { state in
             state.parseCount += 1
             state.totalParseDuration += duration
             state.latexFormulasExtracted += formulasExtracted
         }
+        guard let (metrics, observers) = payload else { return }
         notify(metrics: metrics, to: observers)
     }
 
     @_spi(Internal)
     public static func recordLatexRender(failed: Bool) {
-        let (metrics, observers) = mutateAndSnapshot { state in
+        let payload = mutateAndMaybeSnapshot { state in
             state.latexRenderCount += 1
             if failed { state.latexRenderFailures += 1 }
         }
+        guard let (metrics, observers) = payload else { return }
         notify(metrics: metrics, to: observers)
     }
 
     @_spi(Internal)
     public static func recordLatexCache(hit: Bool) {
-        let (metrics, observers) = mutateAndSnapshot { state in
+        let payload = mutateAndMaybeSnapshot { state in
             if hit { state.latexCacheHits += 1 }
             else { state.latexCacheMisses += 1 }
         }
+        guard let (metrics, observers) = payload else { return }
         notify(metrics: metrics, to: observers)
     }
 
     @_spi(Internal)
     public static func recordHighlightCache(hit: Bool) {
-        let (metrics, observers) = mutateAndSnapshot { state in
+        let payload = mutateAndMaybeSnapshot { state in
             if hit { state.highlightCacheHits += 1 }
             else { state.highlightCacheMisses += 1 }
         }
+        guard let (metrics, observers) = payload else { return }
         notify(metrics: metrics, to: observers)
     }
 
     @_spi(Internal)
     public static func recordStreamingReparse() {
-        let (metrics, observers) = mutateAndSnapshot { state in
+        let payload = mutateAndMaybeSnapshot { state in
             state.streamingReparseCount += 1
         }
+        guard let (metrics, observers) = payload else { return }
         notify(metrics: metrics, to: observers)
     }
 
@@ -198,25 +204,31 @@ public enum MarkdownObservability {
         severity: MarkdownDiagnostic.Severity,
         code: MarkdownDiagnostic.Code
     ) {
-        let (metrics, observers) = mutateAndSnapshot { state in
+        let payload = mutateAndMaybeSnapshot { state in
             state.diagnosticsByCode[code, default: 0] += 1
             state.diagnosticsBySeverity[severity, default: 0] += 1
         }
+        guard let (metrics, observers) = payload else { return }
         notify(metrics: metrics, to: observers)
     }
 
     // MARK: - Internal helpers
 
-    /// Mutate state and snapshot the observer list under a single lock acquisition.
-    /// Eliminates the race window where another thread could mutate state or remove
-    /// observers between two separate lock-protected reads.
-    private static func mutateAndSnapshot(
+    /// Mutate state and, only when at least one observer is registered, snapshot
+    /// observers and build the metrics struct.
+    ///
+    /// Returns `nil` when there are no observers — the hot path then short-circuits
+    /// without allocating `MarkdownMetrics` (two Dictionary copies). Counter mutation
+    /// still happens, so subsequent `snapshot()` pulls reflect the new value.
+    private static func mutateAndMaybeSnapshot(
         _ mutation: @Sendable (inout State) -> Void
-    ) -> (MarkdownMetrics, [MarkdownMetricsObserver]) {
+    ) -> (MarkdownMetrics, [MarkdownMetricsObserver])? {
         lock.withLock { state in
             mutation(&state)
-            let metrics = buildMetrics(from: state)
+            guard !state.observers.isEmpty else { return nil }
             let observers = state.observers.values.compactMap { $0.observer }
+            guard !observers.isEmpty else { return nil }
+            let metrics = buildMetrics(from: state)
             return (metrics, observers)
         }
     }
