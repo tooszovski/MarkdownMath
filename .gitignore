@@ -1,0 +1,17 @@
+.DS_Store
+.build/
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/
+.netrc
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Agent / planning artefacts — never commit
+CLAUDE.md
+AGENTS.md
+.cursorrules
+*-backlog.md
+*-plan.md
+*-roadmap.md
