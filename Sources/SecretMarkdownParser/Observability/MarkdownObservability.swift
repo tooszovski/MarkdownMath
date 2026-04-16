@@ -6,20 +6,14 @@ import os
 /// Implementations are notified after every event that mutates metrics — typically
 /// after each completed parse, LaTeX render, cache lookup, or diagnostic emission.
 ///
-/// > Important: The callback is delivered **synchronously on the calling thread**
-/// > (whichever thread invoked parsing/rendering/cache lookup). The conformer is
-/// > responsible for any required actor hop. If your observer touches
-/// > `@MainActor`-isolated state, dispatch the work yourself:
+/// > Important: The callback is delivered **asynchronously** through an unstructured
+/// > `Task`. The pipeline thread is never blocked. Each callback arrives on the
+/// > cooperative pool, or on the main actor if the conformer is `@MainActor`.
 /// >
-/// > ```swift
-/// > final class Dashboard: MarkdownMetricsObserver {
-/// >     func markdownDidUpdateMetrics(_ m: MarkdownMetrics) {
-/// >         Task { @MainActor in
-/// >             // ...update SwiftUI state...
-/// >         }
-/// >     }
-/// > }
-/// > ```
+/// > **No ordering guarantee** between two callbacks: a Task started later can
+/// > complete earlier. The `MarkdownMetrics` value passed in is always a fresh
+/// > snapshot of cumulative counters, so order rarely matters in practice — but
+/// > do not assume successive callbacks arrive in emission order.
 ///
 /// > Warning: Do not call back into the SecretMarkdown pipeline (parsing, rendering)
 /// > from this callback. Doing so may trigger further metric updates and lead to
@@ -267,8 +261,11 @@ public enum MarkdownObservability {
         to observers: [MarkdownMetricsObserver]
     ) {
         guard !observers.isEmpty else { return }
+        // Observer callbacks are delivered through Task to keep the calling
+        // thread free and to let `@MainActor`-isolated conformers dispatch
+        // automatically without manual trampolining.
         for observer in observers {
-            observer.markdownDidUpdateMetrics(metrics)
+            Task { observer.markdownDidUpdateMetrics(metrics) }
         }
     }
 }

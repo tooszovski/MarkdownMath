@@ -7,23 +7,18 @@ import os
 /// register it with ``MarkdownDiagnostics/addObserver(_:)``, and forward
 /// events to your telemetry pipeline.
 ///
-/// > Important: The callback is delivered **synchronously on the calling thread**
-/// > (typically wherever your code invoked parsing or rendering). It may arrive
-/// > on the main thread, on `Task.detached` background threads, or on any other
-/// > queue depending on how the host app drives the pipeline.
+/// > Important: The callback is delivered **asynchronously** through an unstructured
+/// > `Task`. It does not block parsing or rendering, and arrives on the cooperative
+/// > thread pool (or on the main actor if the conformer is `@MainActor`-isolated).
+/// > Two consequences:
 /// >
-/// > The conformer is responsible for actor isolation. If your observer touches
-/// > `@MainActor`-isolated state, dispatch the work yourself:
-/// >
-/// > ```swift
-/// > final class MyObserver: MarkdownDiagnosticsObserver {
-/// >     func markdownDidEmitDiagnostic(_ d: MarkdownDiagnostic) {
-/// >         Task { @MainActor in
-/// >             // ...mutate UI state safely...
-/// >         }
-/// >     }
-/// > }
-/// > ```
+/// > 1. **No ordering guarantee** between events of different categories. Within
+/// >    a single observer, two events emitted close together may arrive in any
+/// >    order. If you need strict ordering, sequence them yourself by event
+/// >    timestamp.
+/// > 2. The observer may safely touch `@MainActor`-isolated state — declare your
+/// >    conformance `@MainActor` and the runtime will dispatch each callback on
+/// >    the main actor automatically.
 ///
 /// > Warning: Do not call back into the SecretMarkdown pipeline (parsing, rendering)
 /// > from this callback. Doing so may trigger further diagnostic emissions and lead
@@ -216,12 +211,17 @@ public final class MarkdownDiagnostics: @unchecked Sendable {
                 context: context()
             )
 
+            // OSLog runs synchronously — log entries should be ordered with
+            // the event that produced them.
             if snapshot.mirrorsToOSLog {
                 OSLogBridge.log(event)
             }
 
+            // Observer callbacks are delivered through Task to keep the calling
+            // thread free and to let `@MainActor`-isolated conformers dispatch
+            // automatically without manual trampolining.
             for observer in snapshot.observers {
-                observer.markdownDidEmitDiagnostic(event)
+                Task { observer.markdownDidEmitDiagnostic(event) }
             }
         }
 
