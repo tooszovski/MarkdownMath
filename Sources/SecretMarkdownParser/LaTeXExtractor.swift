@@ -46,7 +46,6 @@ enum LaTeXExtractor {
                 if j < count { j += 1 } // skip newline
                 // Find closing fence
                 var foundClose = false
-                let searchStart = j
                 while j < count {
                     // Check if line starts with matching fence
                     if chars[j] == fence {
