@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftMath
+@_spi(Internal) import SecretMarkdownParser
 
 #if canImport(UIKit)
 import UIKit
@@ -79,12 +80,16 @@ public final class LaTeXCache {
             isDarkMode: isDarkMode,
             displayStyle: displayStyle
         )
-        guard let image = cache[key] else { return nil }
+        guard let image = cache[key] else {
+            MarkdownObservability.recordLatexCache(hit: false)
+            return nil
+        }
         // Move to end of access order (most recently used)
         if let index = accessOrder.firstIndex(of: key) {
             accessOrder.remove(at: index)
         }
         accessOrder.append(key)
+        MarkdownObservability.recordLatexCache(hit: true)
         return image
     }
 

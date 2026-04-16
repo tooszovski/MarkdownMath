@@ -17,6 +17,10 @@ struct LaTeXEntry: Sendable {
 enum LaTeXExtractor {
 
     static func extract(from input: String) -> LaTeXExtraction {
+        let diagnostics = MarkdownDiagnostics.shared
+        // Hoisted out of the scan loop: a malformed document with N unclosed
+        // delimiters would otherwise take N locks just to read this Int.
+        let snippetMaxLen = diagnostics.snippetMaxLength
         var mapping: [String: LaTeXEntry] = [:]
         var result = ""
         result.reserveCapacity(input.count)
@@ -42,7 +46,6 @@ enum LaTeXExtractor {
                 if j < count { j += 1 } // skip newline
                 // Find closing fence
                 var foundClose = false
-                let searchStart = j
                 while j < count {
                     // Check if line starts with matching fence
                     if chars[j] == fence {
@@ -62,7 +65,16 @@ enum LaTeXExtractor {
                     while j < count, chars[j] != "\n" { j += 1 }
                     if j < count { j += 1 }
                 }
-                if !foundClose { j = count }
+                if !foundClose {
+                    diagnostics.emit(
+                        severity: .warning,
+                        category: .latex,
+                        code: .unclosedFencedCodeBlock,
+                        message: "Fenced code block opened but never closed; consumed to end of input.",
+                        context: snippetContext(chars: chars, at: fenceStart, maxLength: snippetMaxLen)
+                    )
+                    j = count
+                }
                 for idx in fenceStart..<j {
                     result.append(Character(chars[idx]))
                 }
@@ -100,6 +112,13 @@ enum LaTeXExtractor {
                     j += 1
                 }
                 if !found {
+                    diagnostics.emit(
+                        severity: .debug,
+                        category: .latex,
+                        code: .unclosedInlineCode,
+                        message: "Inline code span opened with backticks but never closed; treated as literal.",
+                        context: snippetContext(chars: chars, at: start, maxLength: snippetMaxLen)
+                    )
                     // No closing found, just emit the backticks
                     for idx in start..<start + tickLen {
                         result.append(Character(chars[idx]))
@@ -122,6 +141,15 @@ enum LaTeXExtractor {
                 let contentStart = i + 2
                 if let endIdx = findClosingDelimiter(in: chars, from: contentStart, delimiter: ["$", "$"]) {
                     let content = String(String.UnicodeScalarView(chars[contentStart..<endIdx]))
+                    if content.isEmpty {
+                        diagnostics.emit(
+                            severity: .debug,
+                            category: .latex,
+                            code: .emptyLaTeXFormula,
+                            message: "Empty display LaTeX block ($$$$) — emitted as inline placeholder.",
+                            context: snippetContext(chars: chars, at: i, maxLength: snippetMaxLen)
+                        )
+                    }
                     let uuid = "LATEX_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
                     mapping[uuid] = LaTeXEntry(content: content, isInline: false)
                     result.append(uuid)
@@ -129,6 +157,13 @@ enum LaTeXExtractor {
                     continue
                 }
                 // No closing found, treat as literal
+                diagnostics.emit(
+                    severity: .warning,
+                    category: .latex,
+                    code: .unclosedDisplayLaTeX,
+                    message: "Display LaTeX delimiter $$ opened but never closed; rendered as literal text.",
+                    context: snippetContext(chars: chars, at: i, maxLength: snippetMaxLen)
+                )
                 result.append(Character(chars[i]))
                 i += 1
                 continue
@@ -145,6 +180,13 @@ enum LaTeXExtractor {
                     i = endIdx + 2 // skip \]
                     continue
                 }
+                diagnostics.emit(
+                    severity: .warning,
+                    category: .latex,
+                    code: .unclosedBackslashBracket,
+                    message: "LaTeX delimiter \\[ opened but never closed; rendered as literal text.",
+                    context: snippetContext(chars: chars, at: i, maxLength: snippetMaxLen)
+                )
                 result.append(Character(chars[i]))
                 i += 1
                 continue
@@ -161,6 +203,13 @@ enum LaTeXExtractor {
                     i = endIdx + 2 // skip \)
                     continue
                 }
+                diagnostics.emit(
+                    severity: .warning,
+                    category: .latex,
+                    code: .unclosedBackslashParen,
+                    message: "LaTeX delimiter \\( opened but never closed; rendered as literal text.",
+                    context: snippetContext(chars: chars, at: i, maxLength: snippetMaxLen)
+                )
                 result.append(Character(chars[i]))
                 i += 1
                 continue
@@ -177,6 +226,13 @@ enum LaTeXExtractor {
                     i = endIdx + 1 // skip closing $
                     continue
                 }
+                diagnostics.emit(
+                    severity: .warning,
+                    category: .latex,
+                    code: .unclosedInlineLaTeX,
+                    message: "Inline LaTeX delimiter $ opened but never closed; rendered as literal text.",
+                    context: snippetContext(chars: chars, at: i, maxLength: snippetMaxLen)
+                )
                 result.append(Character(chars[i]))
                 i += 1
                 continue
@@ -224,6 +280,28 @@ enum LaTeXExtractor {
             j += 1
         }
         return nil
+    }
+
+    /// Build a `MarkdownDiagnostic.Context` with a sanitized snippet around `offset`
+    /// and the scalar location. `maxLength` is the pre-read snippet limit; pass `0`
+    /// to suppress the snippet entirely.
+    private static func snippetContext(
+        chars: [Unicode.Scalar],
+        at offset: Int,
+        maxLength: Int
+    ) -> MarkdownDiagnostic.Context {
+        guard maxLength > 0 else {
+            return MarkdownDiagnostic.Context(snippet: nil, location: offset)
+        }
+        let windowEnd = min(offset + 40, chars.count)
+        let raw = String(String.UnicodeScalarView(chars[offset..<windowEnd]))
+        let snippet: String
+        if raw.count <= maxLength {
+            snippet = raw
+        } else {
+            snippet = String(raw.prefix(maxLength)) + "…"
+        }
+        return MarkdownDiagnostic.Context(snippet: snippet, location: offset)
     }
 
     /// Find closing single `$` (not `$$`) starting from `from`. Returns index of closing `$`.

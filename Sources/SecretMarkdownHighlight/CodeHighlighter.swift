@@ -1,4 +1,5 @@
 import SwiftUI
+@_spi(Internal) import SecretMarkdownParser
 
 // MARK: - Token Types
 
@@ -609,7 +610,9 @@ final class HighlightCache {
     private let maxEntries = 50
 
     func get(key: Key) -> AttributedString? {
-        cache[key]
+        let value = cache[key]
+        MarkdownObservability.recordHighlightCache(hit: value != nil)
+        return value
     }
 
     func set(key: Key, value: AttributedString) {
@@ -664,13 +667,36 @@ public struct CodeHighlighter {
         let tokens = Tokenizer.tokenize(code, language: language)
 
         var result = AttributedString(code)
+        var indexFailures = 0
 
         for token in tokens {
             guard let lower = AttributedString.Index(token.range.lowerBound, within: result),
                   let upper = AttributedString.Index(token.range.upperBound, within: result) else {
+                indexFailures += 1
                 continue
             }
             result[lower..<upper].foregroundColor = palette.color(for: token.type)
+        }
+
+        if indexFailures > 0 {
+            // Aggregate per-call: emit one event with the failure count rather
+            // than firing inside the loop. Keeps the hot path lock-free.
+            let diagnostics = MarkdownDiagnostics.shared
+            diagnostics.emit(
+                severity: .debug,
+                category: .highlighting,
+                code: .highlightTokenIndexFailed,
+                message: "Some highlight tokens could not be mapped to AttributedString indices and were left unhighlighted.",
+                context: MarkdownDiagnostic.Context(
+                    snippet: nil,
+                    location: nil,
+                    extra: [
+                        "language": language ?? "unknown",
+                        "failures": String(indexFailures),
+                        "totalTokens": String(tokens.count)
+                    ]
+                )
+            )
         }
 
         cache.set(key: key, value: result)

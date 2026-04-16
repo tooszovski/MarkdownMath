@@ -26,6 +26,14 @@ public final class StreamingParser: @unchecked Sendable {
     private var _document: ParsedDocument = ParsedDocument(blocks: [])
     private var _unclosedDelimiter: UnclosedDelimiter?
 
+    /// Result of `_reparseUnlocked` — carries the data needed for observability
+    /// emission outside the parser's lock.
+    private struct ReparseOutcome {
+        let document: ParsedDocument
+        let unclosedDelimiter: UnclosedDelimiter?
+        let textSnapshot: String
+    }
+
     /// Creates a new, empty streaming parser.
     public init() {}
 
@@ -39,10 +47,12 @@ public final class StreamingParser: @unchecked Sendable {
     /// - Returns: The full parsed document after incorporating the new chunk.
     @discardableResult
     public func append(_ chunk: String) -> ParsedDocument {
-        lock.lock()
-        defer { lock.unlock() }
-        _text.append(chunk)
-        return _reparse()
+        let outcome = withLock {
+            _text.append(chunk)
+            return _reparseUnlocked()
+        }
+        emitObservability(for: outcome)
+        return outcome.document
     }
 
     /// Replace the entire accumulated text and reparse from scratch.
@@ -54,17 +64,17 @@ public final class StreamingParser: @unchecked Sendable {
     /// - Returns: The full parsed document for the provided text.
     @discardableResult
     public func setText(_ fullText: String) -> ParsedDocument {
-        lock.lock()
-        defer { lock.unlock() }
-        _text = fullText
-        return _reparse()
+        let outcome = withLock {
+            _text = fullText
+            return _reparseUnlocked()
+        }
+        emitObservability(for: outcome)
+        return outcome.document
     }
 
     /// The full text accumulated so far across all `append` and `setText` calls.
     public var currentText: String {
-        lock.lock()
-        defer { lock.unlock() }
-        return _text
+        withLock { _text }
     }
 
     /// Whether the current text has unclosed delimiters (LaTeX `$`, fenced code blocks, etc.).
@@ -72,61 +82,88 @@ public final class StreamingParser: @unchecked Sendable {
     /// When `true`, the parser is buffering trailing content that cannot yet be
     /// fully parsed. This is expected during active streaming.
     public var hasUnclosedDelimiters: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return _unclosedDelimiter != nil
+        withLock { _unclosedDelimiter != nil }
     }
 
     /// The most recently parsed document, without appending new text.
     public var currentDocument: ParsedDocument {
-        lock.lock()
-        defer { lock.unlock() }
-        return _document
+        withLock { _document }
     }
 
     /// Reset the parser to its initial empty state, discarding all accumulated text.
     public func reset() {
-        lock.lock()
-        defer { lock.unlock() }
-        _text = ""
-        _document = ParsedDocument(blocks: [])
-        _unclosedDelimiter = nil
+        withLock {
+            _text = ""
+            _document = ParsedDocument(blocks: [])
+            _unclosedDelimiter = nil
+        }
     }
 
     // MARK: - Private
 
-    /// Reparse the current text. Must be called while holding `lock`.
-    private func _reparse() -> ParsedDocument {
+    /// Helper that wraps `lock.lock() / defer unlock` around a closure. Keeps
+    /// observability emission strictly outside the lock window — calling
+    /// `MarkdownDiagnostics`/`MarkdownObservability` while `lock` is held risks
+    /// host-side re-entrancy because `NSLock` is non-recursive.
+    private func withLock<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+
+    /// Reparse the current text. Caller must hold `lock`.
+    /// Performs **no** observability emission — that is the public method's
+    /// responsibility, after the lock is released.
+    private func _reparseUnlocked() -> ReparseOutcome {
         _unclosedDelimiter = DelimiterBuffer.findUnclosedDelimiter(in: _text)
 
-        let textToParse: String
         if let unclosed = _unclosedDelimiter {
             // Parse only up to the unclosed delimiter; treat the rest as plain text
             let safePortion = String(_text[_text.startIndex..<unclosed.startIndex])
             let pendingPortion = String(_text[unclosed.startIndex...])
 
             if safePortion.isEmpty {
-                // Everything is pending — just show as plain text
                 let pendingBlock = BlockNode.paragraph(inlines: [.text(pendingPortion)])
                 _document = ParsedDocument(blocks: [pendingBlock])
-                return _document
+            } else {
+                let parsed = SecretMarkdownParser.parse(safePortion)
+                let pendingBlock = BlockNode.paragraph(inlines: [.text(pendingPortion)])
+                _document = ParsedDocument(blocks: parsed.blocks + [pendingBlock])
             }
-
-            // Parse the safe portion
-            let parsed = SecretMarkdownParser.parse(safePortion)
-            // Append pending text as a plain paragraph
-            let pendingBlock = BlockNode.paragraph(inlines: [.text(pendingPortion)])
-            _document = ParsedDocument(blocks: parsed.blocks + [pendingBlock])
-            return _document
-        } else {
-            textToParse = _text
-        }
-
-        if textToParse.isEmpty {
+        } else if _text.isEmpty {
             _document = ParsedDocument(blocks: [])
         } else {
-            _document = SecretMarkdownParser.parse(textToParse)
+            _document = SecretMarkdownParser.parse(_text)
         }
-        return _document
+
+        return ReparseOutcome(
+            document: _document,
+            unclosedDelimiter: _unclosedDelimiter,
+            textSnapshot: _text
+        )
+    }
+
+    /// Emit metrics + sampled diagnostic for a reparse. Called outside the lock.
+    private func emitObservability(for outcome: ReparseOutcome) {
+        MarkdownObservability.recordStreamingReparse()
+        guard let unclosed = outcome.unclosedDelimiter else { return }
+        let diagnostics = MarkdownDiagnostics.shared
+        guard diagnostics.shouldEmitStreamingDebug() else { return }
+        let scalars = outcome.textSnapshot.unicodeScalars
+        let scalarOffset = scalars.distance(
+            from: scalars.startIndex,
+            to: unclosed.startIndex.samePosition(in: scalars) ?? scalars.startIndex
+        )
+        diagnostics.emit(
+            severity: .debug,
+            category: .streaming,
+            code: .streamingUnclosedDelimiter,
+            message: "Streaming buffer holds unclosed delimiter; pending content rendered as plain text.",
+            context: MarkdownDiagnostic.Context(
+                snippet: nil,
+                location: scalarOffset,
+                extra: ["delimiter": String(describing: unclosed.type)]
+            )
+        )
     }
 }
