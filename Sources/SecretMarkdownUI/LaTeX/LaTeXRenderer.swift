@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftMath
+@_spi(Internal) import SecretMarkdownParser
 
 /// Renders LaTeX strings to platform-native images using SwiftMath (pure CoreGraphics, no JavaScript).
 ///
@@ -23,12 +24,16 @@ public struct LaTeXRenderer {
         fontSize: CGFloat = 20,
         textColor: MTColor = .black
     ) -> MTImage? {
-        let mathImage = MTMathImage(
-            latex: latex,
-            fontSize: fontSize,
-            textColor: textColor
-        )
-        let (_, image) = mathImage.asImage()
+        let image = Signposts.interval(Signposts.latex, "render") { () -> MTImage? in
+            let mathImage = MTMathImage(
+                latex: latex,
+                fontSize: fontSize,
+                textColor: textColor
+            )
+            let (_, img) = mathImage.asImage()
+            return img
+        }
+        emitRenderResult(latex: latex, image: image, displayStyle: false)
         return image
     }
 
@@ -50,7 +55,7 @@ public struct LaTeXRenderer {
     ) -> MTImage? {
         let cache = LaTeXCache.shared
 
-        // Check cache first
+        // Check cache first — `get` records the hit/miss metric internally.
         if let cached = cache.get(
             latex: latex,
             fontSize: fontSize,
@@ -60,14 +65,17 @@ public struct LaTeXRenderer {
             return cached
         }
 
-        let labelMode: MTMathUILabelMode = displayStyle ? .display : .text
-        let mathImage = MTMathImage(
-            latex: latex,
-            fontSize: fontSize,
-            textColor: textColor,
-            labelMode: labelMode
-        )
-        let (_, image) = mathImage.asImage()
+        let image = Signposts.interval(Signposts.latex, "render") { () -> MTImage? in
+            let labelMode: MTMathUILabelMode = displayStyle ? .display : .text
+            let mathImage = MTMathImage(
+                latex: latex,
+                fontSize: fontSize,
+                textColor: textColor,
+                labelMode: labelMode
+            )
+            let (_, img) = mathImage.asImage()
+            return img
+        }
 
         if let image {
             cache.set(
@@ -79,6 +87,7 @@ public struct LaTeXRenderer {
             )
         }
 
+        emitRenderResult(latex: latex, image: image, displayStyle: displayStyle)
         return image
     }
 
@@ -111,5 +120,25 @@ public struct LaTeXRenderer {
         #elseif canImport(AppKit)
         return Image(nsImage: mtImage)
         #endif
+    }
+
+    /// Update render counters and emit a diagnostic when SwiftMath could not
+    /// produce an image. Called from both `render` overloads.
+    private static func emitRenderResult(latex: String, image: MTImage?, displayStyle: Bool) {
+        let failed = image == nil
+        MarkdownObservability.recordLatexRender(failed: failed)
+        guard failed else { return }
+        let diagnostics = MarkdownDiagnostics.shared
+        diagnostics.emit(
+            severity: .error,
+            category: .rendering,
+            code: .latexRenderFailed,
+            message: "SwiftMath could not render LaTeX formula; host should fall back to text.",
+            context: MarkdownDiagnostic.Context(
+                snippet: diagnostics.sanitizedSnippet(latex),
+                location: nil,
+                extra: ["displayStyle": String(displayStyle)]
+            )
+        )
     }
 }

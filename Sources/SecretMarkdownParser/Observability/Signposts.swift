@@ -1,18 +1,21 @@
 import Foundation
 import os
 
-/// Apple signposts for performance tracing in Instruments.
+/// Apple signposts for performance tracing in Instruments. SPI for the
+/// SecretMarkdown package — UI/Highlight targets import through
+/// `@_spi(Internal) import SecretMarkdownParser`.
 ///
 /// Wraps `OSSignposter` with a check against ``MarkdownObservability/signpostsEnabled``
 /// so the cost of recording is paid only when enabled.
-enum Signposts {
+@_spi(Internal)
+public enum Signposts {
 
-    static let subsystem = "com.secretmarkdown"
+    public static let subsystem = "com.secretmarkdown"
 
-    static let parser = OSSignposter(subsystem: subsystem, category: "parse")
-    static let latex = OSSignposter(subsystem: subsystem, category: "latex.render")
-    static let streaming = OSSignposter(subsystem: subsystem, category: "streaming.reparse")
-    static let highlight = OSSignposter(subsystem: subsystem, category: "highlight")
+    public static let parser = OSSignposter(subsystem: subsystem, category: "parse")
+    public static let latex = OSSignposter(subsystem: subsystem, category: "latex.render")
+    public static let streaming = OSSignposter(subsystem: subsystem, category: "streaming.reparse")
+    public static let highlight = OSSignposter(subsystem: subsystem, category: "highlight")
 
     /// Run `work` inside a signpost interval if signposts are enabled.
     ///
@@ -20,7 +23,7 @@ enum Signposts {
     /// or custom `os_signpost` tracks. When signposts are disabled, `work` runs
     /// directly with no overhead.
     @inline(__always)
-    static func interval<T>(
+    public static func interval<T>(
         _ signposter: OSSignposter,
         _ name: StaticString,
         _ work: () throws -> T
@@ -37,7 +40,7 @@ enum Signposts {
 
     /// Emit a single point-in-time event if signposts are enabled.
     @inline(__always)
-    static func event(
+    public static func event(
         _ signposter: OSSignposter,
         _ name: StaticString
     ) {

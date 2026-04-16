@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftMath
+@_spi(Internal) import SecretMarkdownParser
 
 /// A SwiftUI view that renders a LaTeX formula with caching, fallback, and proper layout.
 struct LaTeXView: View {
@@ -35,14 +36,33 @@ struct LaTeXView: View {
                     .accessibilityLabel(LaTeXAccessibility.describe(latex))
             }
         } else {
-            // Fallback: show as code-style text
+            // Fallback: show as code-style text. Emission lives in `.task(id:)`
+            // so the warning fires once per distinct formula, not on every
+            // re-evaluation of the view body.
             Text(latex)
                 .font(theme.codeFont)
                 .foregroundStyle(theme.textColor)
                 .padding(displayStyle ? theme.codeBlockPadding : 0)
                 .background(displayStyle ? theme.codeBlockBackgroundColor : .clear)
                 .clipShape(RoundedRectangle(cornerRadius: displayStyle ? theme.codeBlockCornerRadius : 0))
+                .task(id: latex) { emitFallback() }
         }
+    }
+
+    /// Emit `latexFallbackActivated` for the current formula.
+    private func emitFallback() {
+        let diagnostics = MarkdownDiagnostics.shared
+        diagnostics.emit(
+            severity: .warning,
+            category: .rendering,
+            code: .latexFallbackActivated,
+            message: "LaTeX formula could not be rendered; falling back to code-style text.",
+            context: MarkdownDiagnostic.Context(
+                snippet: diagnostics.sanitizedSnippet(latex),
+                location: nil,
+                extra: ["displayStyle": String(displayStyle)]
+            )
+        )
     }
 
     private var platformColor: MTColor {

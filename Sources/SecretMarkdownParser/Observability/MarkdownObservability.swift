@@ -6,8 +6,20 @@ import os
 /// Implementations are notified after every event that mutates metrics — typically
 /// after each completed parse, LaTeX render, cache lookup, or diagnostic emission.
 ///
-/// > Important: The callback may be invoked from any thread. Implementations must
-/// > be thread-safe and fast (no I/O on the calling thread).
+/// > Important: The callback is delivered **synchronously on the calling thread**
+/// > (whichever thread invoked parsing/rendering/cache lookup). The conformer is
+/// > responsible for any required actor hop. If your observer touches
+/// > `@MainActor`-isolated state, dispatch the work yourself:
+/// >
+/// > ```swift
+/// > final class Dashboard: MarkdownMetricsObserver {
+/// >     func markdownDidUpdateMetrics(_ m: MarkdownMetrics) {
+/// >         Task { @MainActor in
+/// >             // ...update SwiftUI state...
+/// >         }
+/// >     }
+/// > }
+/// > ```
 ///
 /// > Warning: Do not call back into the SecretMarkdown pipeline (parsing, rendering)
 /// > from this callback. Doing so may trigger further metric updates and lead to

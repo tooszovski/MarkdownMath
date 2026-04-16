@@ -7,10 +7,23 @@ import os
 /// register it with ``MarkdownDiagnostics/addObserver(_:)``, and forward
 /// events to your telemetry pipeline.
 ///
-/// > Important: The callback may be invoked from any thread. Implementations
-/// > must be thread-safe. Heavy work (network, disk) should be dispatched to
-/// > a background queue — the broadcaster invokes observers synchronously and
-/// > a slow observer will slow down parsing.
+/// > Important: The callback is delivered **synchronously on the calling thread**
+/// > (typically wherever your code invoked parsing or rendering). It may arrive
+/// > on the main thread, on `Task.detached` background threads, or on any other
+/// > queue depending on how the host app drives the pipeline.
+/// >
+/// > The conformer is responsible for actor isolation. If your observer touches
+/// > `@MainActor`-isolated state, dispatch the work yourself:
+/// >
+/// > ```swift
+/// > final class MyObserver: MarkdownDiagnosticsObserver {
+/// >     func markdownDidEmitDiagnostic(_ d: MarkdownDiagnostic) {
+/// >         Task { @MainActor in
+/// >             // ...mutate UI state safely...
+/// >         }
+/// >     }
+/// > }
+/// > ```
 ///
 /// > Warning: Do not call back into the SecretMarkdown pipeline (parsing, rendering)
 /// > from this callback. Doing so may trigger further diagnostic emissions and lead
