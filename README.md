@@ -1,44 +1,145 @@
 # SecretMarkdown
 
-Markdown rendering library with inline LaTeX support, optimized for AI chat interfaces with streaming output.
+Native SwiftUI rendering of Markdown with inline and display LaTeX, built for AI chat interfaces where text arrives token by token.
 
-![Build & Test](https://github.com/nicktoozyakin/SecretMarkdown/actions/workflows/build-and-test.yml/badge.svg)
+![Build & Test](https://github.com/tooszovski/SecretMarkdown/actions/workflows/build-and-test.yml/badge.svg)
+
+## Features
+
+- **CommonMark + GFM** via Apple's [swift-markdown](https://github.com/swiftlang/swift-markdown): headings, emphasis, links, lists, block quotes, code blocks, tables, thematic breaks.
+- **LaTeX** inline (`$...$`, `\(...\)`) and display (`$$...$$`, `\[...\]`), rendered natively with [SwiftMath](https://github.com/mgriebling/SwiftMath). Rendered formulas are cached, and each formula gets an accessibility label.
+- **Streaming mode** for incremental output: unclosed LaTeX delimiters (`$`, `$$`, `\(`, `\[`), inline code and fenced code blocks are buffered, so a half-received message renders without flicker or broken markup.
+- **Theming** through the SwiftUI environment, with `default` and `compact` presets.
+- **Optional syntax highlighting** for Swift, Python, JavaScript, TypeScript, Bash, SQL, Kotlin, JSON, HTML and CSS.
+- **Diagnostics and metrics** you can route to your own logging or crash reporter. The package never sends anything off-device.
+- Swift 6 language mode, strict concurrency.
 
 ## Requirements
 
-- Swift 6
-- iOS 17+
-- macOS 14+
-- visionOS 1+
+- Swift 6.0+ / Xcode 16+
+- iOS 17+, macOS 14+, visionOS 1+
 
 ## Installation
 
-Add SecretMarkdown as a dependency in your `Package.swift`:
+Add the package to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/nicktoozyakin/SecretMarkdown.git", from: "0.1.0"),
+    .package(url: "https://github.com/tooszovski/SecretMarkdown.git", from: "0.1.0"),
 ]
 ```
 
-Then add the desired target to your module:
+Then add the products you need:
 
 ```swift
 .target(
     name: "YourTarget",
     dependencies: [
         .product(name: "SecretMarkdownUI", package: "SecretMarkdown"),
+        .product(name: "SecretMarkdownHighlight", package: "SecretMarkdown"),
     ]
 )
 ```
 
-### Available Products
+In Xcode: **File → Add Package Dependencies…** and paste the repository URL.
+
+### Products
 
 | Product | Description |
 |---|---|
-| `SecretMarkdownParser` | Markdown to AST parser with LaTeX extraction |
-| `SecretMarkdownUI` | SwiftUI renderer with theming and streaming |
-| `SecretMarkdownHighlight` | Syntax highlighting (optional) |
+| `SecretMarkdownParser` | Markdown to AST parser with LaTeX extraction and a streaming parser. No UI dependencies |
+| `SecretMarkdownUI` | SwiftUI renderer: `MarkdownView`, themes, LaTeX views |
+| `SecretMarkdownHighlight` | Optional syntax highlighting for code blocks |
+
+## Usage
+
+### Static text
+
+```swift
+import SecretMarkdownUI
+
+struct ContentView: View {
+    var body: some View {
+        ScrollView {
+            MarkdownView("""
+            # Hello **World**
+
+            Einstein's formula: $E = mc^2$
+
+            $$\\int_0^1 x^2\\,dx = \\frac{1}{3}$$
+            """)
+            .padding()
+        }
+    }
+}
+```
+
+### Streaming (AI chat)
+
+Pass the accumulated text and a flag while the response is still arriving:
+
+```swift
+struct ChatBubble: View {
+    let text: String
+    let isStreaming: Bool
+
+    var body: some View {
+        MarkdownView(text: text, isStreaming: isStreaming)
+            .markdownTheme(.compact)
+    }
+}
+```
+
+When `isStreaming` becomes `false`, the final text is parsed once more without buffering.
+
+If you need the AST outside SwiftUI, use the parser directly:
+
+```swift
+import SecretMarkdownParser
+
+let parser = StreamingParser()
+for try await chunk in tokens {
+    let document = parser.append(chunk)
+    // render `document` or inspect `parser.hasUnclosedDelimiters`
+}
+```
+
+`MarkdownView(document:)` renders a pre-parsed `ParsedDocument`.
+
+### Theming
+
+Adjust fonts, colors and spacing through the environment:
+
+```swift
+MarkdownView(content)
+    .markdownTheme { theme in
+        theme.bodyFont = .callout
+        theme.linkColor = .accentColor
+        theme.codeBlockBackgroundColor = .gray.opacity(0.1)
+        theme.paragraphSpacing = 8
+    }
+```
+
+Or use a preset: `.markdownTheme(.default)` / `.markdownTheme(.compact)`.
+
+### Code highlighting
+
+```swift
+import SecretMarkdownHighlight
+
+MarkdownView(content)
+    .enableCodeHighlighting()
+```
+
+## Example app
+
+`Example/` contains a demo app with static, streaming and theming screens. Open `Example/Package.swift` in Xcode and run the `SecretMarkdownDemo` scheme.
+
+## Testing
+
+```bash
+swift test
+```
 
 ## Diagnostics & observability
 
@@ -148,4 +249,7 @@ MarkdownObservability.reset()
 
 ## License
 
-See LICENSE for details.
+SecretMarkdown is released under the MIT License. See [LICENSE](LICENSE) for details.
+
+LaTeX rendering is built on [SwiftMath](https://github.com/mgriebling/SwiftMath) (MIT), Markdown parsing on [swift-markdown](https://github.com/swiftlang/swift-markdown) (Apache 2.0).
+
