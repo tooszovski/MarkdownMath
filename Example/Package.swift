@@ -2,17 +2,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "SecretMarkdownDemo",
+    name: "MarkdownMathDemo",
     platforms: [.iOS(.v17), .macOS(.v14)],
     dependencies: [
-        .package(path: ".."),  // SecretMarkdown
+        .package(path: ".."),  // MarkdownMath
     ],
     targets: [
         .executableTarget(
-            name: "SecretMarkdownDemo",
+            name: "MarkdownMathDemo",
             dependencies: [
-                .product(name: "SecretMarkdownUI", package: "SecretMarkdown"),
-                .product(name: "SecretMarkdownHighlight", package: "SecretMarkdown"),
+                .product(name: "MarkdownMathUI", package: "MarkdownMath"),
+                .product(name: "MarkdownMathHighlight", package: "MarkdownMath"),
             ]
         )
     ]

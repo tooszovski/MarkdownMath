@@ -3,48 +3,48 @@
 import PackageDescription
 
 let package = Package(
-    name: "SecretMarkdown",
+    name: "MarkdownMath",
     platforms: [
         .iOS(.v17),
         .macOS(.v14),
         .visionOS(.v1),
     ],
     products: [
-        .library(name: "SecretMarkdownParser", targets: ["SecretMarkdownParser"]),
-        .library(name: "SecretMarkdownUI", targets: ["SecretMarkdownUI"]),
-        .library(name: "SecretMarkdownHighlight", targets: ["SecretMarkdownHighlight"]),
+        .library(name: "MarkdownMathParser", targets: ["MarkdownMathParser"]),
+        .library(name: "MarkdownMathUI", targets: ["MarkdownMathUI"]),
+        .library(name: "MarkdownMathHighlight", targets: ["MarkdownMathHighlight"]),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-markdown", from: "0.5.0"),
-        .package(name: "SwiftMath", path: "../SwiftMath"),
+        .package(url: "https://github.com/mgriebling/SwiftMath.git", from: "1.7.3"),
     ],
     targets: [
         .target(
-            name: "SecretMarkdownParser",
+            name: "MarkdownMathParser",
             dependencies: [
                 .product(name: "Markdown", package: "swift-markdown"),
             ]
         ),
         .target(
-            name: "SecretMarkdownUI",
+            name: "MarkdownMathUI",
             dependencies: [
-                "SecretMarkdownParser",
+                "MarkdownMathParser",
                 .product(name: "SwiftMath", package: "SwiftMath"),
             ]
         ),
         .target(
-            name: "SecretMarkdownHighlight",
+            name: "MarkdownMathHighlight",
             dependencies: [
-                "SecretMarkdownUI",
+                "MarkdownMathUI",
             ]
         ),
         .testTarget(
-            name: "SecretMarkdownParserTests",
-            dependencies: ["SecretMarkdownParser"]
+            name: "MarkdownMathParserTests",
+            dependencies: ["MarkdownMathParser"]
         ),
         .testTarget(
-            name: "SecretMarkdownUITests",
-            dependencies: ["SecretMarkdownUI"]
+            name: "MarkdownMathUITests",
+            dependencies: ["MarkdownMathUI"]
         ),
     ]
 )

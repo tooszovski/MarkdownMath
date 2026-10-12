@@ -1,13 +1,13 @@
 {
-  "originHash" : "2371cc2504aa0d544c6b9551ad4f8db1af31a9a6ee88c4ace2b40d11b3d2f320",
+  "originHash" : "8caf75ad690d8e56546cbc0dac088ebd14a37a79f2ba9563ee2bb6fa169e869f",
   "pins" : [
     {
       "identity" : "swift-cmark",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swiftlang/swift-cmark.git",
       "state" : {
-        "revision" : "5d9bdaa4228b381639fff09403e39a04926e2dbe",
-        "version" : "0.7.1"
+        "revision" : "08ddb528923cc1a6527e02b7a1aee9e516ca749a",
+        "version" : "0.9.0"
       }
     },
     {
@@ -15,8 +15,17 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swiftlang/swift-markdown",
       "state" : {
-        "revision" : "7d9a5ce307528578dfa777d505496bd5f544ad94",
-        "version" : "0.7.3"
+        "revision" : "25cb61d3482054b09ae76ca4f281b1bfe7fe5a43",
+        "version" : "0.9.0"
+      }
+    },
+    {
+      "identity" : "swiftmath",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/mgriebling/SwiftMath.git",
+      "state" : {
+        "revision" : "fa8244ed032f4a1ade4cb0571bf87d2f1a9fd2d7",
+        "version" : "1.7.3"
       }
     }
   ],

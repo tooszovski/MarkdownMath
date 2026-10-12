@@ -1,8 +1,8 @@
-# SecretMarkdown
+# MarkdownMath
 
 Native SwiftUI rendering of Markdown with inline and display LaTeX, built for AI chat interfaces where text arrives token by token.
 
-![Build & Test](https://github.com/tooszovski/SecretMarkdown/actions/workflows/build-and-test.yml/badge.svg)
+![Build & Test](https://github.com/tooszovski/MarkdownMath/actions/workflows/build-and-test.yml/badge.svg)
 
 ## Features
 
@@ -25,7 +25,7 @@ Add the package to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/tooszovski/SecretMarkdown.git", from: "0.1.0"),
+    .package(url: "https://github.com/tooszovski/MarkdownMath.git", from: "0.1.0"),
 ]
 ```
 
@@ -35,8 +35,8 @@ Then add the products you need:
 .target(
     name: "YourTarget",
     dependencies: [
-        .product(name: "SecretMarkdownUI", package: "SecretMarkdown"),
-        .product(name: "SecretMarkdownHighlight", package: "SecretMarkdown"),
+        .product(name: "MarkdownMathUI", package: "MarkdownMath"),
+        .product(name: "MarkdownMathHighlight", package: "MarkdownMath"),
     ]
 )
 ```
@@ -47,16 +47,16 @@ In Xcode: **File → Add Package Dependencies…** and paste the repository URL.
 
 | Product | Description |
 |---|---|
-| `SecretMarkdownParser` | Markdown to AST parser with LaTeX extraction and a streaming parser. No UI dependencies |
-| `SecretMarkdownUI` | SwiftUI renderer: `MarkdownView`, themes, LaTeX views |
-| `SecretMarkdownHighlight` | Optional syntax highlighting for code blocks |
+| `MarkdownMathParser` | Markdown to AST parser with LaTeX extraction and a streaming parser. No UI dependencies |
+| `MarkdownMathUI` | SwiftUI renderer: `MarkdownView`, themes, LaTeX views |
+| `MarkdownMathHighlight` | Optional syntax highlighting for code blocks |
 
 ## Usage
 
 ### Static text
 
 ```swift
-import SecretMarkdownUI
+import MarkdownMathUI
 
 struct ContentView: View {
     var body: some View {
@@ -95,7 +95,7 @@ When `isStreaming` becomes `false`, the final text is parsed once more without b
 If you need the AST outside SwiftUI, use the parser directly:
 
 ```swift
-import SecretMarkdownParser
+import MarkdownMathParser
 
 let parser = StreamingParser()
 for try await chunk in tokens {
@@ -125,7 +125,7 @@ Or use a preset: `.markdownTheme(.default)` / `.markdownTheme(.compact)`.
 ### Code highlighting
 
 ```swift
-import SecretMarkdownHighlight
+import MarkdownMathHighlight
 
 MarkdownView(content)
     .enableCodeHighlighting()
@@ -133,7 +133,7 @@ MarkdownView(content)
 
 ## Example app
 
-`Example/` contains a demo app with static, streaming and theming screens. Open `Example/Package.swift` in Xcode and run the `SecretMarkdownDemo` scheme.
+`Example/` contains a demo app with static, streaming and theming screens. Open `Example/Package.swift` in Xcode and run the `MarkdownMathDemo` scheme.
 
 ## Testing
 
@@ -151,7 +151,7 @@ them — the package never sends data anywhere on its own.
 ### Subscribe to diagnostics
 
 ```swift
-import SecretMarkdownParser
+import MarkdownMathParser
 
 final class TelemetrySink: MarkdownDiagnosticsObserver {
     func markdownDidEmitDiagnostic(_ d: MarkdownDiagnostic) {
@@ -205,7 +205,7 @@ let metricsSubscription = MarkdownObservability.addObserver(Dashboard())
 ```
 
 Performance traces are recorded with `OSSignposter` under subsystem
-`com.secretmarkdown` (categories `parse`, `latex.render`, `streaming.reparse`,
+`com.markdownmath` (categories `parse`, `latex.render`, `streaming.reparse`,
 `highlight`) — visible in Instruments without any host code. Toggle with
 `MarkdownObservability.signpostsEnabled` (default: `true` in DEBUG,
 `false` in RELEASE).
@@ -249,7 +249,7 @@ MarkdownObservability.reset()
 
 ## License
 
-SecretMarkdown is released under the MIT License. See [LICENSE](LICENSE) for details.
+MarkdownMath is released under the MIT License. See [LICENSE](LICENSE) for details.
 
 LaTeX rendering is built on [SwiftMath](https://github.com/mgriebling/SwiftMath) (MIT), Markdown parsing on [swift-markdown](https://github.com/swiftlang/swift-markdown) (Apache 2.0).
 
